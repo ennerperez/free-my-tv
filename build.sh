@@ -75,6 +75,7 @@ final class Config {
     static final String LANGUAGE = "$(prop language auto)";
     static final String CURRENCY = "$(prop currency USD)";
     static final String TEMPERATURE = "$(prop temperature auto)";
+    static final String MUSIC_APP = "$(java_string "$(prop music_app '')")";
     static final boolean DISABLE_ASSISTANT = $ASSIST;
     static final String REPOSITORY_URL = "$(java_string "$REPOSITORY_URL")";
     static final String BUILD_TAG = "$(java_string "$BUILD_TAG")";

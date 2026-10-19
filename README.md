@@ -78,6 +78,7 @@ Everything lives in `config.properties`, created by the first build:
 | `show_crypto` | Show Binance crypto prices on home and screensaver | `false` |
 | `currency` | Crypto prices in `USD`, `EUR`, `BRL`… | `USD` |
 | `temperature` | `C`, `F` or `auto` | `auto` |
+| `music_app` | Android package opened by the optional Music tab; empty hides it | empty |
 | `disable_assistant` | Also turn off Google Assistant | `false` |
 
 Changed something? Run `./build.sh` and install again. Keep `freemytv.keystore`: updates are signed with it.
