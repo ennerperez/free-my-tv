@@ -42,6 +42,7 @@ java_string() {
 LAT="$(number latitude 40.7128)"
 LON="$(number longitude -74.0060)"
 ASSIST=false; [ "$(prop disable_assistant false)" = "true" ] && ASSIST=true
+CRYPTO=false; [ "$(prop show_crypto false)" = "true" ] && CRYPTO=true
 
 BUILD_TAG="$(git describe --tags --abbrev=0 --match 'v[0-9]*' --match '[0-9]*' HEAD 2>/dev/null || true)"
 BUILD_TAG="${BUILD_TAG:-untagged}"
@@ -78,6 +79,7 @@ final class Config {
     static final String REPOSITORY_URL = "$(java_string "$REPOSITORY_URL")";
     static final String BUILD_TAG = "$(java_string "$BUILD_TAG")";
     static final String BUILD_SHA = "$(java_string "$BUILD_SHA")";
+    static final boolean SHOW_CRYPTO = $CRYPTO;
 }
 EOF
 
