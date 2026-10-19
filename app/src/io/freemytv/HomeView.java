@@ -84,9 +84,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final float L_TALL_W = 320, L_CARD_GAP = 40, L_BUTTON = 68, L_BUTTON_GAP = 20, L_BUTTON_CY = 103;
     private static final float L_PLATTER_TOP = 814, L_TILE_H = 126;
     private static final int L_INK = 0xFF1D1D1F, L_DIM = 0xFF6E6E73, L_FAINT = 0xFF8E8E93;
-    private static final String[] TABS = {"Explorar", "Filmes", "Séries"};
-    private static final String[] TABS_EN = {"Explore", "Movies", "Shows"};
+    private static final String[] TABS = {"Explorar", "Filmes", "Séries", "Música"};
+    private static final String[] TABS_EN = {"Explore", "Movies", "Shows", "Music"};
     private static final String[] TAB_KIND = {null, "movie", "tv"};
+    private static final int CONTENT_TABS = 3, MUSIC_TAB = 3, BUTTON_COUNT = 3, MAX_TOP_ITEMS = 7;
     private static final int Z_TOP = 4, Z_CARDS = 5;
 
     private final Activity activity;
@@ -110,11 +111,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private boolean nightPair;          // the glass holds both photos (day and night), blended by `night`
     private Shader nightGradient;
 
-    // At the top: tabs (0 to 2) and icon-only buttons (3 to 5); the three cards
+    // At the top: three content tabs, optional Music, then three icon-only buttons; the three cards.
     private int tab, topIndex, cardIndex;
     private List<Recs.Pick> cards = new ArrayList<>();
-    private final Spring[] topFocus = new Spring[6];
-    private final RectF[] topRects = new RectF[6];
+    private final Spring[] topFocus = new Spring[MAX_TOP_ITEMS];
+    private final RectF[] topRects = new RectF[MAX_TOP_ITEMS];
     private final Spring[] cardFocus = new Spring[3];
     private final RectF[] cardRects = new RectF[3];
     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
@@ -297,7 +298,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (View v : new View[] {heroLayer, status, platter, tiles, drawerLayer, sheetLayer}) v.setLayerType(LAYER_TYPE_HARDWARE, null);
         for (View v : new View[] {sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer}) addView(v);
         drawerLayer.setVisibility(INVISIBLE);
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < MAX_TOP_ITEMS; i++) {
             topFocus[i] = new Spring(0.26f, 0.85f, 0);
             topRects[i] = new RectF();
         }
@@ -390,6 +391,22 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private static String[] tabs() {
         return Ui.en ? TABS_EN : TABS;
+    }
+
+    private static boolean hasMusicTab() {
+        return !Config.MUSIC_APP.isEmpty();
+    }
+
+    private static int tabCount() {
+        return hasMusicTab() ? CONTENT_TABS + 1 : CONTENT_TABS;
+    }
+
+    private static int buttonStart() {
+        return tabCount();
+    }
+
+    private static int topCount() {
+        return tabCount() + BUTTON_COUNT;
     }
 
     @Override public void onData() {
@@ -1032,7 +1049,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Paint text = lQuote;
         // The corner buttons' names appear in this row: the quotes fade out while one of them has focus.
         float fade = 1;
-        for (int i = 3; i < 6; i++) fade = Math.min(fade, 1 - Ui.clamp(topFocus[i].value));
+        for (int i = buttonStart(); i < topCount(); i++) fade = Math.min(fade, 1 - Ui.clamp(topFocus[i].value));
         if (fade <= 0.01f) return;
         int textColor = text.getColor();
         text.setColor(Ui.alpha(textColor, fade));
@@ -1811,11 +1828,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             it = drawerItems.get(drawerIndex);
             r = drawerRects[drawerIndex];
         } else if (zone == Z_TOP) {
-            if (topIndex < 3) {
+            if (topIndex < CONTENT_TABS) {
                 selectTab(topIndex);
                 return;
             }
-            it = lightButtons.get(topIndex - 3);
+            if (hasMusicTab() && topIndex == MUSIC_TAB) {
+                it = HomeApps.app(Config.MUSIC_APP, Ui.tr("Música", "Music"));
+            } else {
+                it = lightButtons.get(topIndex - buttonStart());
+            }
             r = topRects[topIndex];
         } else if (zone == Z_CARDS) {
             Recs.Pick p = cardIndex < cards.size() ? cards.get(cardIndex) : null;
@@ -1855,14 +1876,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // Text tabs; the focus pill extends 26 px past the text (the first tab's text starts at the margin).
         float pad = 26 * k, tabTop = L_TABBAR_TOP * k, tabBottom = (L_TABBAR_TOP + L_TABBAR_H) * k;
         float x = MARGIN * k - pad;
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < tabCount(); i++) {
             float tw = Math.max(lTabOn.measureText(tabs()[i]), lTab.measureText(tabs()[i]));
             topRects[i].set(x, tabTop, x + tw + 2 * pad, tabBottom);
             x = topRects[i].right + 4 * k;
         }
         float b = L_BUTTON * k, right = CONTENT_R * k, cy = L_BUTTON_CY * k;
-        for (int i = 2; i >= 0; i--) {
-            topRects[3 + i].set(right - b, cy - b / 2, right, cy + b / 2);
+        for (int i = BUTTON_COUNT - 1; i >= 0; i--) {
+            topRects[buttonStart() + i].set(right - b, cy - b / 2, right, cy + b / 2);
             right -= b + L_BUTTON_GAP * k;
         }
         float top = L_CARDS_TOP * k, ch = L_CARD_H * k, g = L_CARD_GAP * k, left = MARGIN * k, tall = L_TALL_W * k;
@@ -1941,10 +1962,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         c.drawText(hello, MARGIN * k - Ui.leftBearing(lTitle, hello), L_TITLE_BASE * k, lTitle);
         // Text tabs (the selected one in bold, in the main text color); with focus on the tabs, the selected one gets
         // the white pill with a shadow and grows a little (the tvOS focus).
-        float focus = Ui.clamp(topFocus[tab].value);
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < tabCount(); i++) {
             RectF r = topRects[i];
-            if (i == tab && focus > 0.01f) {
+            float focus = Ui.clamp(topFocus[i].value);
+            if (focus > 0.01f) {
                 float s = 1 + 0.05f * focus;
                 cell.set(r.centerX() - r.width() * s / 2, r.centerY() - r.height() * s / 2,
                         r.centerX() + r.width() * s / 2, r.centerY() + r.height() * s / 2);
@@ -1959,8 +1980,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 fill.setColor(Ui.alpha(0xFFFFFFFF, focus));
                 c.drawRoundRect(cell, rr, rr, fill);
             }
-            Paint p = i == tab ? lTabOn : lTab;
-            if (i == tab) lTabOn.setColor(blend(tone(L_INK, WHITE), L_INK, focus));   // always dark on the white pill
+            Paint p = i == tab || focus > 0.01f ? lTabOn : lTab;
+            if (p == lTabOn) lTabOn.setColor(blend(tone(L_INK, WHITE), L_INK, focus)); // dark on the white focus pill
             c.drawText(tabs()[i], r.centerX() - p.measureText(tabs()[i]) / 2, r.centerY() + Ui.halfCap(p), p);
         }
         int top = -1;
@@ -2030,9 +2051,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private void drawLightButtons(Canvas c) {
         applyTone();
-        for (int i = 0; i < 3; i++) {
-            RectF r = topRects[3 + i];
-            float f = Ui.clamp(topFocus[3 + i].value), s = 1 + 0.1f * f, rad = r.width() / 2 * s;
+        for (int i = 0; i < BUTTON_COUNT; i++) {
+            int topItem = buttonStart() + i;
+            RectF r = topRects[topItem];
+            float f = Ui.clamp(topFocus[topItem].value), s = 1 + 0.1f * f, rad = r.width() / 2 * s;
             cell.set(r.centerX() - rad, r.centerY() - rad, r.centerX() + rad, r.centerY() + rad);
             tmp.set(cell);
             tmp.offset(0, (6 + 8 * f) * k);
@@ -2084,10 +2106,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 break;
             case Z_TOP:
                 if (dx != 0) {
-                    int next = Math.max(0, Math.min(5, topIndex + dx));
+                    int next = Math.max(0, Math.min(topCount() - 1, topIndex + dx));
                     if (next == topIndex) return true;
                     topIndex = next;
-                    if (topIndex < 3) selectTab(topIndex);   // like Apple TV tabs: focusing a tab selects it
+                    if (topIndex < CONTENT_TABS) selectTab(topIndex); // focusing a content tab selects it
                 } else if (dy > 0) {
                     if (cards.isEmpty()) {
                         zone = Z_SHELF;

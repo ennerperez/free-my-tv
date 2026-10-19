@@ -33,6 +33,11 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
         </intent>
+        <!-- Optional music_app packages may expose only a regular launcher activity (Plexamp does). -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="content" android:host="android.media.tv" />
