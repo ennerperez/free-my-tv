@@ -11,5 +11,8 @@ graphify-out/
 # Local implementation plans
 /docs/plan-*-*.md
 
+# Local implementation plans
+/docs/plan-*-*.md
+
 # macOS
 .DS_Store
