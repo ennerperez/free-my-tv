@@ -46,7 +46,7 @@ import java.util.function.Consumer;
 /**
  * The home screen, styled after the Apple TV app with the macOS 27 glass:
  *  - at the top left, the "For You" title and the tabs (Explore, Movies, Shows); at the top right, icon-only glass
- *    buttons (Live TV, HDMI Inputs, Settings), with the focused one's name below it, and the small crypto quotes
+ *    buttons (Search, Live TV, HDMI Inputs, Settings), with the focused one's name below it, and the small crypto quotes
  *    (logo + price) at the right end of the tab row;
  *  - three cards with the titles recommended for right now in the selected tab (Recs, from TMDB); the background is
  *    the first card's photo, heavily blurred and almost white (Backdrop); without picks, one of your own photos
@@ -3159,8 +3159,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     /**
-     * The round buttons (Live TV, HDMI Inputs and Settings by default): icon-only glass circles (light by day, smoked at
-     * night); the focused one turns white with a dark icon (the tvOS focus) and its name appears below it.
+     * The round buttons (Search, Live TV, HDMI Inputs and Settings by default): icon-only glass circles (light by day,
+     * smoked at night); the focused one turns white with a dark icon (the tvOS focus) and its name appears below it.
      */
     private void drawLightButtons(Canvas c) {
         applyTone();

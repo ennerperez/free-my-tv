@@ -150,6 +150,16 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
             android:theme="@style/FreeMyTV.Home" />
 
+        <activity
+            android:name=".SearchActivity"
+            android:process=":home"
+            android:exported="false"
+            android:label="Search"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="stateAlwaysVisible|adjustResize"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
+            android:theme="@style/FreeMyTV.Home" />
+
         <service
             android:name=".Screensaver"
             android:process=":home"

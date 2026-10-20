@@ -56,6 +56,7 @@ final class HomeApps {
     private HomeApps() {}
 
     static final int APP = 0, LIVE_TV = 1, INPUT = 2, ALL_APPS = 3, SETTINGS = 4, ANDROID_SETTINGS = 5, DEVICE = 6;
+    static final int SEARCH = 8;
     /** The "HDMI Inputs" button: opens the bottom drawer on the inputs (the home screen handles it). */
     static final int INPUTS = 7;
     /** Image size of each card (16:9; on screen it shows up to ~330 px wide). */
@@ -235,11 +236,11 @@ final class HomeApps {
 
     // MARK: - Top buttons (the round ones at the top right)
 
-    static final String TOP_LIVE = "live", TOP_INPUTS = "inputs", TOP_SETTINGS = "settings";
-    static final List<String> TOP_DEFAULT = Collections.unmodifiableList(java.util.Arrays.asList(TOP_LIVE, TOP_INPUTS, TOP_SETTINGS));
+    static final String TOP_SEARCH = "search", TOP_LIVE = "live", TOP_INPUTS = "inputs", TOP_SETTINGS = "settings";
+    static final List<String> TOP_DEFAULT = Collections.unmodifiableList(java.util.Arrays.asList(TOP_SEARCH, TOP_LIVE, TOP_INPUTS, TOP_SETTINGS));
     static final int MAX_TOP = TOP_DEFAULT.size();
 
-    /** The keys of the top buttons, in order (Settings > Top Buttons; by default Live TV, HDMI Inputs, Settings). */
+    /** The keys of the top buttons, in order (Settings > Top Buttons; by default Search, Live TV, HDMI Inputs, Settings). */
     static List<String> topButtonKeys() {
         List<String> saved = Prefs.topButtons();
         if (saved == null) return TOP_DEFAULT;
@@ -248,7 +249,7 @@ final class HomeApps {
         return keys;
     }
 
-    /** The top buttons, ready to draw (0 to 3 of them). */
+    /** The top buttons, ready to draw (0 to 4 of them). */
     static List<Item> topButtons() {
         List<Item> items = new ArrayList<>();
         for (String key : topButtonKeys()) items.add(topButton(key));
@@ -257,6 +258,7 @@ final class HomeApps {
 
     private static Item topButton(String key) {
         switch (key) {
+            case TOP_SEARCH: return action(SEARCH, TOP_SEARCH, Ui.tr("Search"), "search");
             case TOP_LIVE: return action(LIVE_TV, TOP_LIVE, Ui.tr("light|Live TV"), "live_tv");
             case TOP_INPUTS: return action(INPUTS, TOP_INPUTS, Ui.tr("HDMI Inputs"), "hdmi");
             default: return action(SETTINGS, TOP_SETTINGS, Ui.tr("light|Settings"), "settings");
@@ -548,6 +550,9 @@ final class HomeApps {
                 break;
             case LIVE_TV:
                 intent = liveTv(a);
+                break;
+            case SEARCH:
+                intent = new Intent().setComponent(new ComponentName(a, SearchActivity.class));
                 break;
             case INPUT:
                 if (HomeMode.AMAZON && fireInput(a, it)) return true;
