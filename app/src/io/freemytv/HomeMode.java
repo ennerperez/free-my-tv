@@ -111,10 +111,10 @@ final class HomeMode {
         try (Adb adb = connect(c, s)) {
             // The TV's own home screen and screensaver, recorded once (before ours replace them) so "original" restores
             // exactly what was there, on any brand.
-            String home = s.optString("originalHome", "");
+            String home = originalHome(s);
             if (home.isEmpty() || home.startsWith(PKG + "/")) {
                 String found = currentHome(adb);
-                home = found != null ? found : "";
+                home = found != null ? realHome(found) : "";
             }
             String dream = s.optString("originalDream", "");
             if (dream.isEmpty()) dream = defaultDream(adb);
@@ -163,7 +163,7 @@ final class HomeMode {
         JSONObject s = state(c);
         try (Adb adb = connect(c, s)) {
             busy(c, Ui.tr("Religando os apps…", "Turning the apps back on…"));
-            String home = s.optString("originalHome", "");
+            String home = originalHome(s);
             Set<String> toEnable = new HashSet<>(stringList(s, "disabled"));
             for (String pkg : targets(home, s.optString("originalDream", ""))) {
                 if (!Arrays.asList(DEBLOAT).contains(pkg) && !Arrays.asList(ASSISTANT).contains(pkg)) toEnable.add(pkg);
@@ -213,7 +213,7 @@ final class HomeMode {
             if (adb.shell("cmd package set-home-activity " + home).contains("Success")) return true;
         }
         adb.shell("cmd role remove-role-holder --user 0 android.app.role.HOME " + PKG);
-        return !adb.shell("cmd role get-role-holders --user 0 android.app.role.HOME").contains(PKG);
+        return !homeHolder(adb).contains(PKG);
     }
 
     /** Safety net: our home screen crashed 3 times in a row. Only the home screen goes back; the rest stays. */
@@ -221,7 +221,7 @@ final class HomeMode {
         synchronized (RUN) {
             try (Adb adb = Adb.connect(app, 10_000, null)) {
                 JSONObject s = state(app);
-                String home = s.optString("originalHome", "");
+                String home = originalHome(s);
                 adb.shell("pm enable " + GOOGLE_SETUP);
                 restoreHome(adb, home);
                 String homePkg = packageOf(home);
@@ -260,7 +260,7 @@ final class HomeMode {
                 Set<String> present = packages(adb, "");
                 Set<String> disabledNow = packages(adb, "-d");
                 boolean reverted = s.optBoolean("homeReverted");
-                String home = s.optString("originalHome", "");
+                String home = originalHome(s);
                 Set<String> wanted = new HashSet<>(stringList(s, "disabled"));
                 for (String pkg : targets(home, s.optString("originalDream", ""))) {
                     if (!reverted || !(pkg.equals(packageOf(home)) || pkg.equals(GOOGLE_SETUP))) wanted.add(pkg);
@@ -277,7 +277,7 @@ final class HomeMode {
                         fixed.add(pkg);
                     }
                 }
-                if (!reverted && !adb.shell("cmd role get-role-holders --user 0 android.app.role.HOME").contains(PKG)) {
+                if (!reverted && !homeHolder(adb).contains(PKG)) {
                     adb.shell("cmd package set-home-activity " + HOME_ACTIVITY);
                     fixed.add(Ui.tr("o Início", "the home screen"));
                 }
@@ -316,7 +316,7 @@ final class HomeMode {
 
     /** The home screen in use now ("package/activity"): the HOME role holder, among the TV's home screens. */
     private static String currentHome(Adb adb) throws IOException {
-        String holder = adb.shell("cmd role get-role-holders --user 0 android.app.role.HOME").trim();
+        String holder = homeHolder(adb);
         if (holder.isEmpty() || holder.contains(PKG)) return null;
         String list = adb.shell("cmd package query-activities --brief --user 0 -a android.intent.action.MAIN"
                 + " -c android.intent.category.HOME");
@@ -325,6 +325,33 @@ final class HomeMode {
             if (line.startsWith(holder + "/")) return line;
         }
         return null;
+    }
+
+    /**
+     * The package that is the home screen now, or "". Some Android 12 TVs have no `cmd role get-role-holders` (it
+     * answers "Unknown command"), so then we ask which activity opens HOME.
+     */
+    private static String homeHolder(Adb adb) throws IOException {
+        String holder = adb.shell("cmd role get-role-holders --user 0 android.app.role.HOME").trim();
+        if (holder.matches("[\\w.]+(;[\\w.]+)*")) return holder;
+        String[] lines = adb.shell("cmd package resolve-activity --brief --user 0 -a android.intent.action.MAIN"
+                + " -c android.intent.category.HOME").trim().split("\n");
+        String component = lines[lines.length - 1].trim();
+        // With no default home yet, the system's chooser answers ("android/...ResolverActivity"): unknown.
+        return component.contains("/") && !component.startsWith("android/") ? packageOf(component) : "";
+    }
+
+    /** The recorded home screen of the TV, as {@link #realHome}. */
+    private static String originalHome(JSONObject s) {
+        return realHome(s.optString("originalHome", ""));
+    }
+
+    /**
+     * Some TVs (TCL, Android 14) leave the HOME role with Google TV's recovery home, while launcherx is the one that
+     * answers the Home button. Treat that as launcherx, or it stays on and "original" restores the recovery screen.
+     */
+    private static String realHome(String home) {
+        return home.startsWith(GOOGLE_SETUP + "/") ? GOOGLE_HOME : home;
     }
 
     /** The system's default screensaver ("package/service"), or "". */
@@ -399,7 +426,7 @@ final class HomeMode {
         Matcher avail = Pattern.compile("MemAvailable:\\s+(\\d+) kB").matcher(adb.shell("cat /proc/meminfo"));
         if (avail.find()) putMetric(c, mode, "memAvailableMB", Long.parseLong(avail.group(1)) / 1024);
         long pss = 0;
-        String home = packageOf(state(c).optString("originalHome", ""));
+        String home = packageOf(originalHome(state(c)));
         String[] processes = FREE.equals(mode) ? new String[] {PKG + ":home"}
                 : home == null ? new String[0] : new String[] {home, home + ":coreservices"};
         Pattern total = Pattern.compile("TOTAL PSS:\\s+(\\d+)");
