@@ -78,8 +78,8 @@ Everything lives in `config.properties`, created by the first build:
 | `tmdb_region` | Your country (two letters): which titles are on which app | `US` |
 | `latitude`, `longitude` | Your city, for the weather and the sunset | New York |
 | `city` | The name on the weather card | `Weather` |
-| `language` | `auto` (follows the TV), `en` or `pt` | `auto` |
-| `show_crypto` | Show Binance crypto prices on home and screensaver | `false` |
+| `language` | `auto` (follows the TV), `en`, `es` or `pt` | `auto` |
+| `show_crypto` | Show Binance crypto prices on home and screensaver | `true` |
 | `currency` | Crypto prices in `USD`, `EUR`, `BRL`… | `USD` |
 | `temperature` | `C`, `F` or `auto` | `auto` |
 | `music_app` | Android package opened by the optional Music tab; empty hides it | empty |
