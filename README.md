@@ -20,6 +20,7 @@ Open source. Built with Claude Code. One button to undo.
 - **No ads.** No sponsored rows, banners or autoplaying promos. Not one.
 - **Your apps, front and center.** The streaming apps you actually use, on a glass shelf. Pick them and their order right on the TV.
 - **Trending, not sponsored.** Three fresh picks every hour from what's trending this week and the latest releases, only from apps you already have. Movies and Shows get their own tabs.
+- **Search movies and shows** (Google TV and Android TV). Type a title to see which streaming services carry it in your country; requires your TMDB key.
 - **Weather and markets, one press away.** The hour-by-hour forecast (or the next 5 days), sunrise and sunset, and live crypto prices.
 - **What's playing.** Music, a podcast or the radio going on in the background shows on the home screen and the screensaver: the title, the artist and the app, from any app that tells Android what it plays (*Home Settings*, off until you turn it on).
 - **Light by day, dark by night.** It follows your city's real sunset, the way your phone does.
@@ -136,7 +137,7 @@ The first values come from `config.properties`, created by the first build (Goog
 
 | Key | What it does | Default |
 |---|---|---|
-| `tmdb_key` | Your free TMDB key, for the picks | empty |
+| `tmdb_key` | Your free TMDB key, for the picks and Android search | empty |
 | `tmdb_region` | Your country (two letters): which titles are on which app | `US` |
 | `watchmode_key` | Optional, free [Watchmode](https://api.watchmode.com/) key: a pick opens the title's page in its app | empty |
 | `latitude`, `longitude` | Your city, for the weather and the sunset | New York |

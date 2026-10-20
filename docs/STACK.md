@@ -23,7 +23,7 @@
 
 ## Runtime services
 
-- TMDB for trending and streaming-provider metadata; requires private user API key.
+- TMDB for recommendations, title search, and regional streaming-provider metadata; requires a private user API key.
 - Open-Meteo for weather, sunrise, and sunset.
 - Localhost ADB on TV for reversible launcher, screensaver, and package-state changes.
 
