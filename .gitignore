@@ -2,6 +2,9 @@
 config.properties
 *.keystore
 *.idsig
+# An LG TV's app list and icons (webos/apps.py)
+webos-apps.local.json
+webos-icons.local/
 
 # Build output
 out/
@@ -10,9 +13,11 @@ graphify-out/
 
 # Local implementation plans
 /docs/plan-*-*.md
-
-# Local implementation plans
-/docs/plan-*-*.md
+*.ipk
+!docs/webos/FreeMyTV-webos-*.ipk
+*.wgt
+__pycache__/
 
 # macOS
 .DS_Store
+tools/.i18n-cache.json
