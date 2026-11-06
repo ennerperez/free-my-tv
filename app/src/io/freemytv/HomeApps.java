@@ -121,12 +121,9 @@ final class HomeApps {
         {"wink", "Wink", "ru.rt.video.app.tv", "FF5A1F", "", "1"},
         {"spotify", "Spotify", "com.spotify.tv.android", "1DB954", "", "1"},
     };
-    /**
-     * Apps the shelf shows at once (it scrolls for the rest): 8, today's smallest tiles (178 wide in HomeView's 1760 of
-     * content), so a shelf of up to 8 looks as it always did. The built-in list keeps 8, and low-memory TVs hold 8 at
-     * most, without scrolling: every app on the shelf keeps its logo in memory, at two sizes.
-     */
-    private static final int SHELF_VISIBLE = 8, FEW_APPS = 8;
+    /** Four shelf apps map to the remote's red, green, yellow and blue buttons. */
+    static final int MAX_SHELF = 4;
+    private static final int FEW_APPS = MAX_SHELF;
 
     /** Low memory (TCL's 1 GB models): every MB counts. */
     static boolean lowRam(Context c) {
@@ -134,11 +131,11 @@ final class HomeApps {
     }
 
     static int shelfVisible(Context c) {
-        return lowRam(c) ? FEW_APPS : SHELF_VISIBLE;
+        return MAX_SHELF;
     }
 
     static int maxShelf(Context c) {
-        return lowRam(c) ? FEW_APPS : Integer.MAX_VALUE;
+        return MAX_SHELF;
     }
 
     /** An app All Apps leaves out (the TV's own helpers: Safety Guard, T-Solo…): Recent Apps leaves it out too. */
