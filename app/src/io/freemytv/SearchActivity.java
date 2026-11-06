@@ -1,6 +1,9 @@
 package io.freemytv;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.SearchManager;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -55,7 +58,7 @@ public class SearchActivity extends Activity {
         root.setPadding(dp(56), dp(34), dp(56), dp(28));
         root.setBackgroundColor(Color.rgb(13, 14, 18));
 
-        TextView title = text(Ui.tr("Search TMDB"), 34, Color.WHITE, Ui.displaySemibold);
+        TextView title = text(Ui.tr("Search"), 34, Color.WHITE, Ui.displaySemibold);
         root.addView(title, new LinearLayout.LayoutParams(-1, dp(54)));
 
         query = new EditText(this);
@@ -129,13 +132,13 @@ public class SearchActivity extends Activity {
         if (pending != null) handler.removeCallbacks(pending);
         String value = query.getText().toString().trim();
         if (value.isEmpty()) return;
-        if (!Recs.hasKey(this)) {
+        if (!Recs.hasKey(this) && !Recs.plexSearchAvailable()) {
             status.setText(Ui.tr("Add tmdb_key to config.properties."));
             results.removeAllViews();
             return;
         }
         final int ticket = ++generation;
-        status.setText(Ui.tr("Searching TMDB…"));
+        status.setText(Ui.tr("Searching…"));
         recs.search(value, (found, error) -> {
             if (ticket != generation || isFinishing() || isDestroyed()) return;
             showResults(found, error);
@@ -200,6 +203,7 @@ public class SearchActivity extends Activity {
             if (!isFinishing() && !isDestroyed()) poster.setImageBitmap(image);
         });
         card.setContentDescription(result.title + ". " + providerText);
+        if (!result.targets.isEmpty()) card.setOnClickListener(v -> chooseTarget(result));
         card.setOnFocusChangeListener((v, focused) -> {
             card.setBackground(round(focused ? 0xFFF5F5F7 : 0xFF24252B, 18,
                     focused ? 0xFFFFFFFF : 0xFF3A3B43, focused ? 2 : 1));
@@ -211,6 +215,36 @@ public class SearchActivity extends Activity {
         lp.bottomMargin = dp(12);
         card.setLayoutParams(lp);
         return card;
+    }
+
+    private void chooseTarget(Recs.SearchResult result) {
+        if (result.targets.isEmpty()) return;
+        if (result.targets.size() == 1) {
+            openTarget(result, result.targets.get(0));
+            return;
+        }
+        String[] labels = new String[result.targets.size()];
+        for (int i = 0; i < labels.length; i++) labels[i] = result.targets.get(i).label;
+        new AlertDialog.Builder(this).setTitle(result.title).setItems(labels,
+                (dialog, which) -> openTarget(result, result.targets.get(which))).show();
+    }
+
+    private void openTarget(Recs.SearchResult result, Recs.SearchTarget target) {
+        recs.resolveSearchTarget(result, target, uri -> {
+            if (isFinishing() || isDestroyed()) return;
+            if (uri == null || uri.isEmpty()) {
+                Intent search = new Intent(Intent.ACTION_SEARCH).setPackage(target.pkg)
+                        .putExtra(SearchManager.QUERY, result.title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                if (search.resolveActivity(getPackageManager()) != null) {
+                    try {
+                        startActivity(search);
+                        return;
+                    } catch (RuntimeException ignored) {
+                    }
+                }
+            }
+            HomeApps.open(this, HomeApps.app(target.pkg, target.label, uri), null);
+        });
     }
 
     private TextView text(String value, float size, int color, Typeface face) {

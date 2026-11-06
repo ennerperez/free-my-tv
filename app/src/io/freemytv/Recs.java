@@ -61,8 +61,15 @@ final class Recs {
     }
 
     static final class SearchResult {
-        String title, kind, year, overview, poster;
+        int tmdbId;
+        String title, kind;
+        String year = "", overview = "", poster = "";
         final List<String> providers = new ArrayList<>();
+        final List<SearchTarget> targets = new ArrayList<>();
+    }
+
+    static final class SearchTarget {
+        String label, app, pkg, uri;
     }
 
     interface Listener { void onRecs(); }
@@ -326,7 +333,7 @@ final class Recs {
         }
     }
 
-    /** Searches movies and series, then resolves subscription/free/ad-supported providers in the configured region. */
+    /** Searches TMDB and, when configured, Plex; streaming targets are limited to apps installed on this TV. */
     void search(String rawQuery, SearchListener listener) {
         final String query = rawQuery == null ? "" : rawQuery.trim();
         final int ticket = ++searchGeneration;
@@ -337,37 +344,141 @@ final class Recs {
         searchIo.execute(() -> {
             List<SearchResult> results = new ArrayList<>();
             String failure = "";
-            try {
-                JSONArray found = get("/search/multi?query=" + URLEncoder.encode(query, "UTF-8")
-                        + "&language=" + lang() + "&include_adult=false&page=1").optJSONArray("results");
-                for (int i = 0; found != null && i < found.length() && results.size() < 10; i++) {
-                    if (ticket != searchGeneration) return;
-                    JSONObject item = found.optJSONObject(i);
-                    if (item == null) continue;
-                    String kind = item.optString("media_type");
-                    if (!"movie".equals(kind) && !"tv".equals(kind)) continue;
-                    String title = item.optString("movie".equals(kind) ? "title" : "name").trim();
-                    if (title.isEmpty()) continue;
-                    SearchResult result = new SearchResult();
-                    result.title = title;
-                    result.kind = kind;
-                    String date = item.optString("movie".equals(kind) ? "release_date" : "first_air_date");
-                    result.year = date.length() >= 4 ? date.substring(0, 4) : "";
-                    result.overview = item.optString("overview").trim();
-                    result.poster = item.optString("poster_path").trim();
-                    try {
-                        result.providers.addAll(streamingProviders(kind, item.optInt("id")));
-                    } catch (Exception e) {
-                        AppLog.w("TMDB providers for " + kind + ":" + item.optInt("id") + ": " + e.getMessage());
+            if (hasKey(context)) {
+                try {
+                    JSONArray found = get("/search/multi?query=" + URLEncoder.encode(query, "UTF-8")
+                            + "&language=" + lang() + "&include_adult=false&page=1").optJSONArray("results");
+                    for (int i = 0; found != null && i < found.length() && results.size() < 10; i++) {
+                        if (ticket != searchGeneration) return;
+                        JSONObject item = found.optJSONObject(i);
+                        if (item == null) continue;
+                        String kind = item.optString("media_type");
+                        if (!"movie".equals(kind) && !"tv".equals(kind)) continue;
+                        String title = item.optString("movie".equals(kind) ? "title" : "name").trim();
+                        if (title.isEmpty()) continue;
+                        SearchResult result = new SearchResult();
+                        result.tmdbId = item.optInt("id");
+                        result.title = title;
+                        result.kind = kind;
+                        String date = item.optString("movie".equals(kind) ? "release_date" : "first_air_date");
+                        result.year = date.length() >= 4 ? date.substring(0, 4) : "";
+                        result.overview = item.optString("overview").trim();
+                        result.poster = item.optString("poster_path").trim();
+                        try {
+                            result.providers.addAll(streamingProviders(kind, result.tmdbId, result));
+                        } catch (Exception e) {
+                            AppLog.w("TMDB providers for " + kind + ":" + result.tmdbId + ": " + e.getMessage());
+                        }
+                        results.add(result);
                     }
-                    results.add(result);
+                } catch (Exception e) {
+                    failure = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                    AppLog.w("TMDB search: " + failure);
                 }
-            } catch (Exception e) {
-                failure = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-                AppLog.w("TMDB search: " + failure);
+            }
+            if (plexOn()) {
+                try {
+                    addPlexSearch(query, results);
+                } catch (Exception e) {
+                    String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                    AppLog.w("plex search: " + message);
+                    if (results.isEmpty() && failure.isEmpty()) failure = message;
+                }
             }
             final String error = failure;
-            if (ticket == searchGeneration) main.post(() -> listener.onResults(results, error));
+            if (ticket == searchGeneration) main.post(() -> listener.onResults(results, results.isEmpty() ? error : ""));
+        });
+    }
+
+    static boolean plexSearchAvailable() { return plexOn(); }
+
+    private void addPlexSearch(String query, List<SearchResult> results) throws Exception {
+        String server = plexGet("/identity").getString("machineIdentifier");
+        JSONArray hubs = plexGet("/hubs/search?query=" + URLEncoder.encode(query, "UTF-8") + "&limit=8")
+                .optJSONArray("Hub");
+        int added = 0;
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; hubs != null && i < hubs.length() && added < 8; i++) {
+            JSONObject hub = hubs.optJSONObject(i);
+            if (hub == null) continue;
+            String kind = "show".equals(hub.optString("type")) ? "tv"
+                    : "movie".equals(hub.optString("type")) ? "movie" : "";
+            if (kind.isEmpty()) continue;
+            JSONArray items = hub.optJSONArray("Metadata");
+            if (items == null) items = hub.optJSONArray("Directory");
+            for (int j = 0; items != null && j < items.length() && added < 8; j++) {
+                JSONObject item = items.optJSONObject(j);
+                if (item == null) continue;
+                String title = item.optString("title").trim();
+                String ratingKey = item.optString("ratingKey");
+                if (title.isEmpty() || !ratingKey.matches("[0-9]+") || !seen.add(ratingKey)) continue;
+                SearchResult plex = new SearchResult();
+                plex.title = title;
+                plex.kind = kind;
+                int year = item.optInt("year");
+                plex.year = year > 0 ? String.valueOf(year) : "";
+                plex.providers.add("Plex");
+                SearchTarget target = new SearchTarget();
+                target.label = "Plex";
+                target.app = "plex";
+                target.pkg = "com.plexapp.android";
+                target.uri = "plex://libraries/" + server + "/" + (kind.equals("movie") ? "movie" : "show") + "/"
+                        + title.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-") + "/" + ratingKey;
+                plex.targets.add(target);
+
+                SearchResult match = null;
+                for (SearchResult existing : results) {
+                    if (existing.kind.equals(plex.kind) && sameSearchTitle(existing, plex)) {
+                        match = existing;
+                        break;
+                    }
+                }
+                if (match == null) results.add(plex);
+                else {
+                    match.targets.add(0, target);
+                    if (!match.providers.contains("Plex")) match.providers.add("Plex");
+                }
+                added++;
+            }
+        }
+    }
+
+    private static boolean sameSearchTitle(SearchResult a, SearchResult b) {
+        if (!searchTitleKey(a.title).equals(searchTitleKey(b.title))) return false;
+        return a.year.isEmpty() || b.year.isEmpty() || a.year.equals(b.year);
+    }
+
+    private static String searchTitleKey(String title) {
+        return java.text.Normalizer.normalize(title, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "").toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "");
+    }
+
+    private void addInstalledSearchTarget(SearchResult result, String name, int providerId) {
+        String[] service = service(name, providerId);
+        if (service == null || HomeApps.launchIntent(context.getPackageManager(), service[2]) == null) return;
+        for (SearchTarget target : result.targets) if (target.pkg.equals(service[2])) return;
+        SearchTarget target = new SearchTarget();
+        target.app = service[1];
+        target.pkg = service[2];
+        target.label = SERVICE_NAME.containsKey(service[1]) ? SERVICE_NAME.get(service[1])
+                : service.length > 3 && !service[3].isEmpty() ? service[3] : name;
+        result.targets.add(target);
+    }
+
+    void resolveSearchTarget(SearchResult result, SearchTarget target, java.util.function.Consumer<String> done) {
+        searchIo.execute(() -> {
+            String uri = target.uri;
+            if (uri == null && result.tmdbId > 0 && watchmodeLinksAvailable()) {
+                Pick pick = new Pick();
+                pick.id = result.tmdbId;
+                pick.kind = result.kind;
+                pick.app = target.app;
+                pick.pkg = target.pkg;
+                findLink(pick, true);
+                uri = pick.link;
+            }
+            String resolved = uri;
+            main.post(() -> done.accept(resolved));
         });
     }
 
@@ -402,16 +513,27 @@ final class Recs {
         });
     }
 
-    private List<String> streamingProviders(String kind, int id) throws Exception {
+    private List<String> streamingProviders(String kind, int id, SearchResult result) throws Exception {
         Set<String> names = new LinkedHashSet<>();
         JSONObject all = get("/" + kind + "/" + id + "/watch/providers").optJSONObject("results");
         JSONObject region = all == null ? null : all.optJSONObject(REGION);
         if (region != null) {
-            addProviders(names, region.optJSONArray("flatrate"));
-            addProviders(names, region.optJSONArray("free"));
-            addProviders(names, region.optJSONArray("ads"));
+            addSearchProviders(names, region.optJSONArray("flatrate"), result);
+            addSearchProviders(names, region.optJSONArray("free"), result);
+            addSearchProviders(names, region.optJSONArray("ads"), result);
         }
         return new ArrayList<>(names);
+    }
+
+    private void addSearchProviders(Set<String> names, JSONArray providers, SearchResult result) {
+        for (int i = 0; providers != null && i < providers.length(); i++) {
+            JSONObject provider = providers.optJSONObject(i);
+            if (provider == null) continue;
+            String name = provider.optString("provider_name").trim();
+            if (name.isEmpty()) continue;
+            names.add(name);
+            addInstalledSearchTarget(result, name, provider.optInt("provider_id"));
+        }
     }
 
     private static void addProviders(Set<String> names, JSONArray providers) {
@@ -1230,13 +1352,19 @@ final class Recs {
      * the home screen: with Continue Watching or the clock there, nothing opens them, so no lookups spend the quota.
      */
     private boolean linksOn() {
+        return watchmodeLinksAvailable() && Prefs.topContent().equals(Prefs.TOP_PICKS);
+    }
+
+    private boolean watchmodeLinksAvailable() {
         String key = watchmodeKey();
-        return !key.isEmpty() && cache.getInt("wm:refused", 0) != key.hashCode() && Prefs.topContent().equals(Prefs.TOP_PICKS);
+        return !key.isEmpty() && cache.getInt("wm:refused", 0) != key.hashCode();
     }
 
     /** Sets p.link from what was looked up before, or looks it up (2 requests of the free plan's 2,500 a month). */
-    private void findLink(Pick p) {
-        if (!linksOn() || p.id < 0 || p.pkg == null || p.link != null) return;
+    private void findLink(Pick p) { findLink(p, false); }
+
+    private void findLink(Pick p, boolean search) {
+        if ((!search && !linksOn()) || p.id < 0 || p.pkg == null || p.link != null) return;
         String saved = cache.getString(linkKey(p), null);
         if (saved != null) {
             p.link = saved.isEmpty() ? null : saved;
