@@ -30,6 +30,7 @@ import java.util.Calendar;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -59,7 +60,14 @@ final class Recs {
         java.io.File photo;     // one of your own photos (Photos): no title, no caption
     }
 
+    static final class SearchResult {
+        String title, kind, year, overview, poster;
+        final List<String> providers = new ArrayList<>();
+    }
+
     interface Listener { void onRecs(); }
+    interface SearchListener { void onResults(List<SearchResult> results, String error); }
+    interface ImageListener { void onImage(Bitmap image); }
 
     // TMDB's own mirror of api.themoviedb.org, on the images' domain: some ISPs block the other name (Jio, #327)
     private static final String API = "https://api.tmdb.org/3";
@@ -71,6 +79,7 @@ final class Recs {
     private static final String POSTERS = "https://image.tmdb.org/t/p/w500";
     /** TMDB's Animation genre (movies and shows: cartoons and anime), left out with Picks > Cartoons and anime off. */
     private static final int ANIMATION = 16;
+    private static final String SEARCH_POSTERS = "https://image.tmdb.org/t/p/w342";
     private static final long LIST_EVERY = 6 * 3600_000L;
     /** How often Trakt is asked whether the account changed (marked watched, the watchlist): one small request. */
     private static final long TRAKT_EVERY = 10 * 60_000L;
@@ -187,10 +196,13 @@ final class Recs {
     private final Context context;
     private final SharedPreferences cache;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final ExecutorService searchIo = Executors.newSingleThreadExecutor();
+    private final ExecutorService posterIo = Executors.newFixedThreadPool(3);
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Listener> listeners = new ArrayList<>();
     private final Map<String, Poster> posters = new LinkedHashMap<>();   // narrow-card portraits, same keys as images
-    private final Map<String, Backdrop> images = new LinkedHashMap<>(16, 0.75f, true);   // this hour's, built and ready to draw
+    private final Map<String, Backdrop> images = new LinkedHashMap<>(16, 0.75f, true);   // this hour's images, ready to draw
+    private final Map<String, Bitmap> searchPosters = new LinkedHashMap<>();
     private final java.util.Set<String> pending = new java.util.HashSet<>();
     private volatile List<Pick> picks = new ArrayList<>();
     private volatile int period = -1;
@@ -200,6 +212,7 @@ final class Recs {
     private volatile boolean light;     // light design: builds only the cards (all three tabs' cards fit in memory)
     private volatile long failedAt, keyStamp, traktStamp, linkRetryAt;
     private volatile String listLanguage = "";   // language used for the saved titles, genres and texts
+    private volatile int searchGeneration;
     private volatile String traktActivity = "";  // Trakt's last change when the picks were fetched
     private volatile long traktCheckedAt;
 
@@ -310,6 +323,101 @@ final class Recs {
             String message = String.valueOf(e.getMessage());
             if ("Watchmode returned HTTP 401".equals(message)) return Ui.tr("Watchmode refused this key.");
             return Ui.trf("Couldn't reach Watchmode: {error}", "error", message.startsWith("Watchmode returned") ? message : e.getClass().getSimpleName());
+        }
+    }
+
+    /** Searches movies and series, then resolves subscription/free/ad-supported providers in the configured region. */
+    void search(String rawQuery, SearchListener listener) {
+        final String query = rawQuery == null ? "" : rawQuery.trim();
+        final int ticket = ++searchGeneration;
+        if (query.isEmpty()) {
+            main.post(() -> listener.onResults(new ArrayList<>(), ""));
+            return;
+        }
+        searchIo.execute(() -> {
+            List<SearchResult> results = new ArrayList<>();
+            String failure = "";
+            try {
+                JSONArray found = get("/search/multi?query=" + URLEncoder.encode(query, "UTF-8")
+                        + "&language=" + lang() + "&include_adult=false&page=1").optJSONArray("results");
+                for (int i = 0; found != null && i < found.length() && results.size() < 10; i++) {
+                    if (ticket != searchGeneration) return;
+                    JSONObject item = found.optJSONObject(i);
+                    if (item == null) continue;
+                    String kind = item.optString("media_type");
+                    if (!"movie".equals(kind) && !"tv".equals(kind)) continue;
+                    String title = item.optString("movie".equals(kind) ? "title" : "name").trim();
+                    if (title.isEmpty()) continue;
+                    SearchResult result = new SearchResult();
+                    result.title = title;
+                    result.kind = kind;
+                    String date = item.optString("movie".equals(kind) ? "release_date" : "first_air_date");
+                    result.year = date.length() >= 4 ? date.substring(0, 4) : "";
+                    result.overview = item.optString("overview").trim();
+                    result.poster = item.optString("poster_path").trim();
+                    try {
+                        result.providers.addAll(streamingProviders(kind, item.optInt("id")));
+                    } catch (Exception e) {
+                        AppLog.w("TMDB providers for " + kind + ":" + item.optInt("id") + ": " + e.getMessage());
+                    }
+                    results.add(result);
+                }
+            } catch (Exception e) {
+                failure = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                AppLog.w("TMDB search: " + failure);
+            }
+            final String error = failure;
+            if (ticket == searchGeneration) main.post(() -> listener.onResults(results, error));
+        });
+    }
+
+    /** Loads a compact search-result poster from memory/disk/network without blocking the UI. */
+    void poster(String path, ImageListener listener) {
+        if (path == null || path.isEmpty()) return;
+        synchronized (searchPosters) {
+            Bitmap ready = searchPosters.get(path);
+            if (ready != null) {
+                main.post(() -> listener.onImage(ready));
+                return;
+            }
+        }
+        posterIo.execute(() -> {
+            Bitmap image = null;
+            File file = new File(new File(context.getCacheDir(), "search-posters"), path.replace("/", ""));
+            try {
+                if (!file.exists()) downloadImage(SEARCH_POSTERS + path, file);
+                image = BitmapFactory.decodeFile(file.getPath());
+                if (image == null) throw new IOException("unreadable poster");
+                synchronized (searchPosters) {
+                    searchPosters.put(path, image);
+                    while (searchPosters.size() > 24) searchPosters.remove(searchPosters.keySet().iterator().next());
+                }
+            } catch (IOException | RuntimeException | OutOfMemoryError e) {
+                //noinspection ResultOfMethodCallIgnored
+                file.delete();
+                AppLog.w("TMDB poster: " + e.getMessage());
+            }
+            Bitmap ready = image;
+            if (ready != null) main.post(() -> listener.onImage(ready));
+        });
+    }
+
+    private List<String> streamingProviders(String kind, int id) throws Exception {
+        Set<String> names = new LinkedHashSet<>();
+        JSONObject all = get("/" + kind + "/" + id + "/watch/providers").optJSONObject("results");
+        JSONObject region = all == null ? null : all.optJSONObject(REGION);
+        if (region != null) {
+            addProviders(names, region.optJSONArray("flatrate"));
+            addProviders(names, region.optJSONArray("free"));
+            addProviders(names, region.optJSONArray("ads"));
+        }
+        return new ArrayList<>(names);
+    }
+
+    private static void addProviders(Set<String> names, JSONArray providers) {
+        for (int i = 0; providers != null && i < providers.length(); i++) {
+            String name = providers.optJSONObject(i) == null ? "" : providers.optJSONObject(i).optString("provider_name").trim();
+            if (!name.isEmpty()) names.add(name);
         }
     }
 
@@ -1290,12 +1398,14 @@ final class Recs {
 
     private void download(Pick p) throws IOException {
         File f = imageFile(p);
+    private void download(Pick p) throws IOException {
+        File f = imageFile(p);
         if (!f.exists()) fetchFile(f, p.id < 0
                 ? plexOpen("/photo/:/transcode?width=1920&height=1080&minSize=1&url=" + URLEncoder.encode(p.backdrop, "UTF-8"))
                 : (HttpURLConnection) new URL(IMAGES + p.backdrop).openConnection());
         File poster = posterFile(p);
         if (poster == null || poster.exists()) return;
-        try {   // the narrow cards: without a poster they crop the backdrop
+        try {
             fetchFile(poster, p.id < 0
                     ? plexOpen("/photo/:/transcode?width=500&height=750&minSize=1&url=" + URLEncoder.encode(p.poster, "UTF-8"))
                     : (HttpURLConnection) new URL(POSTERS + p.poster).openConnection());
@@ -1308,10 +1418,14 @@ final class Recs {
         return p.poster == null || p.poster.isEmpty() ? null : new File(new File(context.getCacheDir(), "recs"), "p" + p.poster.replace("/", ""));
     }
 
-    private void fetchFile(File f, HttpURLConnection c) throws IOException {
+    private static void downloadImage(String url, File file) throws IOException {
+        fetchFile(file, (HttpURLConnection) new URL(url).openConnection());
+    }
+
+    private static void fetchFile(File file, HttpURLConnection c) throws IOException {
         //noinspection ResultOfMethodCallIgnored
-        f.getParentFile().mkdirs();
-        File part = new File(f.getPath() + ".part");
+        file.getParentFile().mkdirs();
+        File part = new File(file.getPath() + ".part");
         c.setConnectTimeout(8000);
         c.setReadTimeout(20000);
         try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(part)) {
@@ -1325,8 +1439,8 @@ final class Recs {
         } finally {
             c.disconnect();
         }
-        if (!part.renameTo(f)) throw new IOException("couldn't save the image");
-        prune(f.getParentFile());
+        if (!part.renameTo(file)) throw new IOException("couldn't save the image");
+        prune(file.getParentFile());
     }
 
     /** Reads the photo (≥ the UI's width) and builds the backdrop (Backdrop: cards plus frosted and glass versions). */

@@ -19,9 +19,10 @@ Open source. Built with Claude Code. One button to undo.
 
 - **No ads.** No sponsored rows, banners or autoplaying promos. Not one.
 - **Your apps, front and center.** The streaming apps you actually use, on a glass shelf. Pick them and their order right on the TV.
-- **Trending, not sponsored.** Three fresh picks every hour (up to six, in Home Settings) from what's trending this week and the latest releases, only from apps you already have, and from the services you choose. The focused one opens wide and the others show their posters. Movies and Shows get their own tabs, and on Google TV your own [Plex library](#your-plex-library-optional) can join in.
-- **Continue Watching** (Google TV and Android TV). *Home Settings* → *Top of the screen* puts what you left halfway in your apps on top, with its progress, and OK picks it up in its app. Or a big clock, or the picks.
-- **Your TMDB key from your phone.** *Home Settings* → *TMDB key* shows a QR code: scan it and paste the key. On LG and Samsung, type it with the remote.
+- **Trending, not sponsored.** Three fresh picks every hour (up to six, in Home Settings) from trending titles and new releases, only from apps you have and services you choose. The focused pick opens wide; the others show posters. Movies and Shows have separate tabs. Google TV can include your Plex library.
+- **Search movies and shows** (Google TV and Android TV). Type a title to see streaming services in your country; requires your TMDB key.
+- **Continue Watching** (Google TV and Android TV). *Home Settings* → *Top of the screen* puts unfinished titles on top; OK resumes them in their app. Or show a clock or picks.
+- **Your TMDB key from your phone.** *Home Settings* → *TMDB key* shows a QR code; on LG and Samsung, type the key with the remote.
 - **Weather and markets, one press away.** The hour-by-hour forecast (or the next 5 days), sunrise and sunset, and live crypto prices.
 - **What's playing.** Music, a podcast or the radio going on in the background shows on the home screen and the screensaver: the title, the artist and the app, from any app that tells Android what it plays (*Home Settings*, off until you turn it on).
 - **The status at a glance, and a mouse** (Google TV and Android TV). *Home Settings* → *Status icons* puts Wi-Fi or Ethernet, Bluetooth audio and a USB drive at the top of the home screen; off, nothing listens for them. A mouse or an air-mouse remote works too: hover moves the focus, the wheel scrolls, a click picks.
@@ -153,7 +154,7 @@ The first values come from `config.properties`, created by the first build (Goog
 
 | Key | What it does | Default |
 |---|---|---|
-| `tmdb_key` | Your free TMDB key, for the picks | empty |
+| `tmdb_key` | Your free TMDB key, for the picks and Android search | empty |
 | `tmdb_region` | Your country (two letters): which titles are on which app | `US` |
 | `watchmode_key` | Optional, free [Watchmode](https://api.watchmode.com/) key: a pick opens the title's page in its app. On Google TV and Android TV you can also send it from your phone | empty |
 | `plex_url` and `plex_token` | Optional, your Plex server's `plex.direct` address and token: its newest titles join the picks and open on their page | empty |
