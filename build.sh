@@ -240,7 +240,13 @@ apksigner() {
   if [ -n "$BAT" ]; then "$JAVA" -jar "$BT/lib/apksigner.jar" "$@"
   else "$BT/apksigner" "$@"; fi
 }
-"$JAVAC" -nowarn -Xlint:-options -source 8 -target 8 -bootclasspath "$AJ$CPSEP$BT/core-lambda-stubs.jar" -classpath "$AJ" \
+JAVAC_BOOT="$AJ$CPSEP$BT/core-lambda-stubs.jar"; JAVAC_CP="$AJ"
+if [ -n "$BAT" ]; then
+  # Convert each entry before joining: Git Bash otherwise mangles semicolon-separated paths for Windows javac.
+  JAVAC_BOOT="$(cygpath -w "$AJ");$(cygpath -w "$BT/core-lambda-stubs.jar")"
+  JAVAC_CP="$(cygpath -w "$AJ")"
+fi
+"$JAVAC" -nowarn -Xlint:-options -source 8 -target 8 -bootclasspath "$JAVAC_BOOT" -classpath "$JAVAC_CP" \
   -encoding UTF-8 -d out/classes $(find app/src out/gen -name '*.java')
 d8 --release --min-api 26 --lib "$AJ" --output out $(find out/classes -name '*.class')
 if command -v zip >/dev/null; then (cd out && zip -qj base.apk classes.dex)

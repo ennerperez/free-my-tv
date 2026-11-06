@@ -3034,6 +3034,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             holdArmed = false;      // another key while OK is held: no move mode, no menu
             handler.removeCallbacks(holdStart);
         }
+        int shelfShortcut = shelfShortcut(code);
+        if (shelfShortcut >= 0) {
+            if (down && e.getRepeatCount() == 0 && shelfShortcut < shelf.size()) {
+                if (sheetOpen) closeSheet();
+                if (drawerOpen) closeDrawer();
+                zone = Z_SHELF;
+                shelfIndex = shelfShortcut;
+                retarget(false);
+                activate();
+            }
+            return true;
+        }
         switch (code) {
             case KeyEvent.KEYCODE_DPAD_LEFT:
                 if (down) move(-1, 0);
@@ -3090,6 +3102,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 return true;
             default:
                 return false;
+        }
+    }
+
+    /** The remote's four colored buttons open the matching shelf position. */
+    private static int shelfShortcut(int keyCode) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_PROG_RED: return 0;
+            case KeyEvent.KEYCODE_PROG_GREEN: return 1;
+            case KeyEvent.KEYCODE_PROG_YELLOW: return 2;
+            case KeyEvent.KEYCODE_PROG_BLUE: return 3;
+            default: return -1;
         }
     }
 

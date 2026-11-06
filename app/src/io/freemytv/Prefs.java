@@ -401,13 +401,21 @@ final class Prefs {
         String v = sp().getString("shelf", null);
         if (v == null) return null;
         List<String> out = new ArrayList<>();
-        for (String p : v.split(",")) if (!p.isEmpty()) out.add(p);
+        for (String p : v.split(",")) {
+            if (!p.isEmpty() && out.size() < HomeApps.MAX_SHELF) out.add(p);
+        }
         return out;
     }
 
     static void setShelf(List<String> packages) {
         StringBuilder sb = new StringBuilder();
-        for (String p : packages) sb.append(sb.length() == 0 ? "" : ",").append(p);
+        int count = 0;
+        for (String p : packages) {
+            if (p.isEmpty()) continue;
+            if (count >= HomeApps.MAX_SHELF) break;
+            sb.append(sb.length() == 0 ? "" : ",").append(p);
+            count++;
+        }
         put("shelf", sb.toString());
     }
 

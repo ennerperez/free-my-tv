@@ -1398,8 +1398,6 @@ final class Recs {
 
     private void download(Pick p) throws IOException {
         File f = imageFile(p);
-    private void download(Pick p) throws IOException {
-        File f = imageFile(p);
         if (!f.exists()) fetchFile(f, p.id < 0
                 ? plexOpen("/photo/:/transcode?width=1920&height=1080&minSize=1&url=" + URLEncoder.encode(p.backdrop, "UTF-8"))
                 : (HttpURLConnection) new URL(IMAGES + p.backdrop).openConnection());
