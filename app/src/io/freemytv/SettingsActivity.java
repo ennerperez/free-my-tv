@@ -52,6 +52,7 @@ import java.util.Set;
 public class SettingsActivity extends Activity {
     private SettingsView view;
     private DreamView preview;   // "Screensaver": the screensaver right here, without changing the system setting
+    private boolean previewPending;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -135,12 +136,19 @@ public class SettingsActivity extends Activity {
     }
 
     void showPreview() {
-        preview = new DreamView(this);
-        setContentView(preview);
-        preview.start();
+        if (preview != null || previewPending) return;
+        previewPending = true;
+        Photos.importInbox(this, () -> {
+            if (!previewPending || isFinishing() || isDestroyed()) return;
+            previewPending = false;
+            preview = new DreamView(this);
+            setContentView(preview);
+            preview.start();
+        });
     }
 
     private void closePreview() {
+        previewPending = false;
         if (preview == null) return;
         preview.stop();
         preview = null;

@@ -436,5 +436,6 @@
  "{time} left": "encore {time}",
  "{url}, code {code}": "{url}, code {code}",
  "{version} is out: build it again": "La {version} est sortie : recompilez-la",
- "← → to move · OK to drop · Back to cancel": "← → déplacer · OK déposer · Retour annuler"
+ "← → to move · OK to drop · Back to cancel": "← → déplacer · OK déposer · Retour annuler",
+ "Last updated": "Dernière mise à jour"
 }

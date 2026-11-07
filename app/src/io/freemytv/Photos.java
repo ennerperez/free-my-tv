@@ -4,7 +4,9 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.BitmapRegionDecoder;
+import android.graphics.Canvas;
 import android.graphics.Matrix;
+import android.graphics.Paint;
 import android.graphics.Rect;
 import android.media.ExifInterface;
 import android.os.Build;
@@ -28,16 +30,16 @@ import java.util.concurrent.Executors;
  * Your own photos. A computer puts them in the app's external files folder (tools/photos.py: adb push to
  * Android/data/io.freemytv/files/photos, no permission needed) or, where adb can't reach it, through PhotoInbox; the
  * next time the home screen, the screensaver or the settings open, each one is imported once into the app's private
- * folder, turned upright (EXIF), cropped to 16:9 and re-encoded at the screensaver's size (which also drops its GPS and
- * other tags), and the original is deleted. While they are on (Home Settings > My Photos), the screensaver shows them
+ * folder, turned upright (EXIF), paired when vertical or centered if unmatched, and re-encoded at the screensaver's size
+ * (which also drops its GPS and other tags); the original is deleted. While they are on (Home Settings > My Photos), the screensaver shows them
  * instead of the picks' photos, in the order they came, and without picks (no TMDB key) one of them is the home
  * screen's background, a new one every hour.
  */
 final class Photos {
     private Photos() {}
 
-    /** The screensaver's photo size (DreamView loads them 10% larger than the screen, for the slow zoom). */
-    static final int W = 2112, H = 1188;
+    /** The screensaver's photo size (DreamView loads them 20% larger than the screen, for the slow zoom). */
+    static final int W = 2304, H = 1296;
     /** At most this many (about 300 KB each); later ones wait in the folder until some are removed. */
     static final int MAX = 100;
     /** Smaller ones are icons and thumbnails, not photos. */
@@ -162,8 +164,8 @@ final class Photos {
     private static final List<Runnable> waiting = new ArrayList<>();
 
     /**
-     * Imports what tools/photos.py put in the inbox, in the background, one photo at a time; `done` runs (on the main
-     * thread) when something was imported, also when an import already under way (asked by another screen) brings it.
+     * Imports what tools/photos.py put in the inbox, in the background, one photo at a time; `done` runs on the main
+     * thread after the inbox scan finishes, even when it was empty or another screen was already importing.
      * Cheap when the inbox is empty: one directory listing.
      */
     static void importInbox(Context c, Runnable done) {
@@ -174,9 +176,8 @@ final class Photos {
             importing = true;
         }
         worker.execute(() -> {
-            int n = 0;
             try {
-                n = importNow(app);
+                importNow(app);
             } catch (RuntimeException e) {
                 AppLog.w("photos: import failed: " + e.getMessage());
             }
@@ -186,7 +187,7 @@ final class Photos {
                 tell = new ArrayList<>(waiting);
                 waiting.clear();
             }
-            if (n > 0) main.post(() -> { for (Runnable r : tell) r.run(); });
+            main.post(() -> { for (Runnable r : tell) r.run(); });
         });
     }
 
@@ -224,6 +225,8 @@ final class Photos {
         // (or two within the same second) may not move.
         File[] imported = d.listFiles((dir, name) -> name.endsWith(".jpg"));
         int have = imported == null ? 0 : imported.length, count = 0;
+        Bitmap vertical = null;
+        boolean verticalImmich = false;
         for (File sent : all) {
             if (!sent.isFile()) continue;
             String name = sent.getName();
@@ -233,7 +236,7 @@ final class Photos {
                 sent.delete();
                 continue;
             }
-            if (have + count >= MAX) {
+            if (have + count + (vertical == null ? 0 : 1) >= MAX) {
                 AppLog.w("photos: " + MAX + " already, " + original + " waits");
                 continue;
             }
@@ -243,29 +246,70 @@ final class Photos {
             if (!sent.renameTo(src)) continue;
             // Named by import time (the order they came is the order the screensaver shows them) and by process (the
             // other one may import in the same millisecond); written as .part first, so a crash leaves no half photo.
-            File out = new File(d, String.format(Locale.US, "%013d-%d%s", System.currentTimeMillis() + count,
-                    android.os.Process.myPid(), original.startsWith(IMMICH) ? IMMICH_END : ".jpg"));
-            File part = new File(d, out.getName() + ".part");
             try {
-                Bitmap b = decode(src, W, H);
+                boolean portrait = portrait(src);
+                boolean immich = original.startsWith(IMMICH);
+                Bitmap b = decode(src, portrait ? H * 9 / 16 : W, H);
                 if (b == null) {
                     AppLog.w("photos: skipped " + original + " (too small or unreadable)");
-                } else {
-                    try (OutputStream os = new FileOutputStream(part)) {
-                        b.compress(Bitmap.CompressFormat.JPEG, 86, os);
+                } else if (portrait) {
+                    if (vertical == null) {
+                        vertical = b;
+                        verticalImmich = immich;
+                    } else if (verticalImmich == immich) {
+                        Bitmap pair = verticalPair(vertical, b);
+                        vertical.recycle();
+                        b.recycle();
+                        vertical = null;
+                        try {
+                            write(pair, d, count, immich);
+                        } finally {
+                            pair.recycle();
+                        }
+                        count++;
+                    } else {
+                        Bitmap single = portraitFrame(vertical);
+                        write(single, d, count, verticalImmich);
+                        single.recycle();
+                        vertical.recycle();
+                        count++;
+                        vertical = b;
+                        verticalImmich = immich;
                     }
+                } else {
+                    if (vertical != null) {
+                        Bitmap single = portraitFrame(vertical);
+                        write(single, d, count, verticalImmich);
+                        count++;
+                        single.recycle();
+                        vertical.recycle();
+                        vertical = null;
+                    }
+                    write(b, d, count, immich);
                     b.recycle();
-                    if (!part.renameTo(out)) throw new IOException("can't name " + out.getName());
                     count++;
                 }
             } catch (IOException | RuntimeException | OutOfMemoryError e) {
-                part.delete();
                 AppLog.w("photos: skipped " + original + ": " + e.getMessage());
             }
             src.delete();
         }
+        if (vertical != null) {
+            try {
+                Bitmap single = portraitFrame(vertical);
+                write(single, d, count, verticalImmich);
+                count++;
+                single.recycle();
+            } catch (IOException | RuntimeException | OutOfMemoryError e) {
+                AppLog.w("photos: skipped vertical photo: " + e.getMessage());
+            }
+            vertical.recycle();
+        }
         AppLog.w("photos: imported " + count + ", " + (have + count) + " in all");
-        if (count > 0) Prefs.setPhotos(true);   // new photos show, even if they had been turned off
+        if (count > 0) {
+            synchronized (Photos.class) { listedStamp = -1; }
+            Prefs.setPhotos(true);   // new photos show, even if they had been turned off
+        }
         return count;
     }
 
@@ -301,6 +345,13 @@ final class Photos {
         } catch (RuntimeException e) {
             return 0;
         }
+    }
+
+    /** The latest import time among the photos on disk, or 0. */
+    static long lastUpdated(Context c) {
+        long latest = 0;
+        for (File f : files(c)) latest = Math.max(latest, importedAt(f));
+        return latest;
     }
 
     /** Takes Immich's away (and what of it still waits), keeping tools/photos.py's. */
@@ -393,6 +444,48 @@ final class Photos {
         Bitmap turned = Bitmap.createBitmap(out, 0, 0, tw, th, m, true);
         if (turned != out) out.recycle();
         return turned;
+    }
+
+    private static boolean portrait(File f) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(f.getPath(), bounds);
+        int degrees = rotation(f);
+        int width = degrees == 90 || degrees == 270 ? bounds.outHeight : bounds.outWidth;
+        int height = degrees == 90 || degrees == 270 ? bounds.outWidth : bounds.outHeight;
+        return width > 0 && height > width;
+    }
+
+    private static Bitmap verticalPair(Bitmap left, Bitmap right) {
+        Bitmap out = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+        float x = (W / 2f - left.getWidth()) / 2f;
+        canvas.drawBitmap(left, x, 0, paint);
+        canvas.drawBitmap(right, W / 2f + x, 0, paint);
+        return out;
+    }
+
+    private static Bitmap portraitFrame(Bitmap portrait) {
+        Bitmap out = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+        canvas.drawBitmap(portrait, (W - portrait.getWidth()) / 2f, 0, paint);
+        return out;
+    }
+
+    private static void write(Bitmap image, File dir, int ordinal, boolean immich) throws IOException {
+        String suffix = immich ? IMMICH_END : ".jpg";
+        File out = new File(dir, String.format(Locale.US, "%013d-%d%s", System.currentTimeMillis() + ordinal,
+                android.os.Process.myPid(), suffix));
+        File part = new File(dir, out.getName() + ".part");
+        try (OutputStream os = new FileOutputStream(part)) {
+            if (!image.compress(Bitmap.CompressFormat.JPEG, 86, os)) throw new IOException("can't encode " + out.getName());
+        }
+        if (!part.renameTo(out)) {
+            part.delete();
+            throw new IOException("can't name " + out.getName());
+        }
     }
 
     private static int rotation(File f) {

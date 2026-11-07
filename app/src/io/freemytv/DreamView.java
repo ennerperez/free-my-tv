@@ -135,7 +135,9 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private float k = 1;
     private long minute = -1;
     private String clock = "", date = "";
-    private Paint datePaint, clockPaint, weatherPaint, weatherDim, quotePaint, stalePaint;
+    private String photoCountInfo, photoDateInfo;
+    private int photoInfoIndex, photoInfoTotal;
+    private Paint datePaint, clockPaint, weatherPaint, weatherDim, quotePaint, stalePaint, photoInfoPaint;
     private Paint cornerDate, cornerQuote, cornerStale, cornerClock, labelPaint, metaPaint, hintPaint;
     private TextPaint titlePaint;
 
@@ -189,7 +191,14 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         data.refreshIfStale();
         recs.refreshIfStale();
         recs.prefetchAll();
-        Photos.importInbox(getContext(), () -> { if (running) prepareNext(); });
+        Photos.importInbox(getContext(), () -> {
+            if (running) {
+                refreshPhotoInfo(incoming != null ? incoming : current);
+                prepareNext();
+                invalidate();
+            }
+        });
+        refreshPhotoInfo(current);
         prepareNext();
         handler.postDelayed(tick, 60_000);
         playing.start();
@@ -256,6 +265,8 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         stalePaint.setTextAlign(Paint.Align.CENTER);
         // With photos: the corner (date, clock, prices) and the caption.
         cornerDate = Ui.numbers(Ui.semibold, 30 * k, 0xEBFFFFFF);
+        photoInfoPaint = new Paint(cornerDate);
+        photoInfoPaint.setTextSize(15 * k);
         cornerQuote = Ui.numbers(Ui.regular, 23 * k, 0xC7FFFFFF);
         cornerStale = Ui.text(Ui.medium, 21 * k, 0x99FFFFFF);
         cornerClock = Ui.numbers(Ui.displaySemibold, CLOCK_SIZE * k, 0xF2FFFFFF);
@@ -268,7 +279,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         metaPaint.setLetterSpacing(0.014f);
         Symbols.warmWeather(getContext(), 30 * k);   // the corner's
         Symbols.warmWeather(getContext(), 32 * k);   // under the clock
-        for (Paint p : new Paint[] {cornerDate, cornerQuote, cornerStale, cornerClock, labelPaint, titlePaint, metaPaint, barPaint}) {
+        for (Paint p : new Paint[] {cornerDate, cornerQuote, cornerStale, cornerClock, photoInfoPaint, labelPaint, titlePaint, metaPaint, barPaint}) {
             p.setShadowLayer(18 * k, 0, 2 * k, 0x66000000);
         }
         fitPlaying();
@@ -283,6 +294,37 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     /** Your photos when they are on, otherwise the picks'. */
     private List<Recs.Pick> photos() {
         return Photos.on(getContext()) ? Photos.picks(getContext()) : recs.showcase();
+    }
+
+    /** The imported photo count and the last import date, refreshed after every inbox scan. */
+    private void refreshPhotoInfo(Slide active) {
+        if (!Prefs.photos()) {
+            photoCountInfo = photoDateInfo = null;
+            photoInfoIndex = photoInfoTotal = 0;
+            return;
+        }
+        List<File> imported = Photos.files(getContext());
+        long updated = Photos.lastUpdated(getContext());
+        if (imported.isEmpty() || updated == 0) {
+            photoCountInfo = photoDateInfo = null;
+            photoInfoIndex = photoInfoTotal = 0;
+            return;
+        }
+        photoInfoTotal = imported.size();
+        photoDateInfo = Ui.tr("Last updated") + ": " + Ui.date(updated) + " " + Ui.clock(updated);
+        photoInfoIndex = 0;
+        photoCountInfo = null;
+        setPhotoInfoSlide(active);
+    }
+
+    private void setPhotoInfoSlide(Slide active) {
+        if (photoDateInfo == null || active == null || active.pick.photo == null) {
+            photoInfoIndex = 0;
+            photoCountInfo = null;
+            return;
+        }
+        photoInfoIndex = active.pick.id + 1;
+        photoCountInfo = Ui.tr("Photos") + ": " + photoInfoIndex + " / " + photoInfoTotal;
     }
 
     /** Loads the next photo in the background (one at a time); once ready, it comes in at the right moment. */
@@ -365,6 +407,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             prepared = null;
             current.startedAt = up;
             firstAt = up;
+            setPhotoInfoSlide(current);
             bindPhotos();
             prepareNext();
             return;
@@ -373,6 +416,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             incoming = prepared;
             prepared = null;
             incoming.startedAt = up;
+            setPhotoInfoSlide(incoming);
             bindPhotos();
             return;
         }
@@ -477,6 +521,10 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         }
         drawGlass(canvas, first, e);
         drawCaptions(canvas, up);
+        if (photoCountInfo != null) {
+            canvas.drawText(photoCountInfo, MARGIN * k, h - 47 * k, photoInfoPaint);
+            canvas.drawText(photoDateInfo, MARGIN * k, h - 28 * k, photoInfoPaint);
+        }
     }
 
     /** What an app is playing, cut to fit the corner and the bottom line: once per title, not while recording. */
