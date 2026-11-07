@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TV_HOST="${1:-192.168.0.187}"
+TV_HOST="${1:-192.168.0.230}"
 TV_SERIAL="$TV_HOST"
 [[ "$TV_SERIAL" == *:* ]] || TV_SERIAL="$TV_SERIAL:5555"
 
