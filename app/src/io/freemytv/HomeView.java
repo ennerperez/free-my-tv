@@ -368,7 +368,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private int textPrefs = -1;
     private boolean clock24;
     private String textLanguage;
-    private String weatherTitle, nowTemp, highLow, sunriseText, sunsetText, staleText;
+    private String weatherTitle, nowTemp, highLow, uvText, uvAdviceText, sunriseText, sunsetText, staleText;
     private final String[] hourText = new String[6], hourTempText = new String[6];
     private final String[] dayText = new String[5], dayMaxText = new String[5], dayMinText = new String[5];
     private boolean textDays;   // the weather card shows the next days (Home Settings → Forecast) and has them
@@ -2232,6 +2232,23 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         c.drawText(nowTemp, x + sw + 18 * k - Ui.leftBearing(bigTemp, nowTemp), r.top + 170 * k, bigTemp);
         c.drawText(HomeData.condition(wx.code, wx.isDay), x, r.top + 220 * k, cardText);
         c.drawText(highLow, x, r.top + 258 * k, cardDim);
+        if (UvIndex.available(wx.uvMax)) {
+            int uv = UvIndex.value(wx.uvMax);
+            float pillLeft = x, pillRight = pillLeft + cardDim.measureText(uvText) + 18 * k;
+            fill.setShader(null);
+            fill.setColor(UvIndex.color(uv));
+            c.drawRoundRect(pillLeft, r.top + 272 * k, pillRight, r.top + 296 * k, 8 * k, 8 * k, fill);
+            int oldColor = cardDim.getColor();
+            cardDim.setColor(UvIndex.textColor(uv));
+            c.drawText(uvText, pillLeft + 9 * k, r.top + 290 * k, cardDim);
+            cardDim.setColor(oldColor);
+            float adviceX = pillRight + 14 * k;
+            float adviceRoom = r.right - 34 * k - adviceX;
+            if (adviceRoom > 0) {
+                String advice = TextUtils.ellipsize(uvAdviceText, cardDim, adviceRoom, TextUtils.TruncateAt.END).toString();
+                c.drawText(advice, adviceX, r.top + 290 * k, cardDim);
+            }
+        }
         float split = r.left + 392 * k;
         fill.setShader(null);
         fill.setColor(tone(0x1A000000, 0x24FFFFFF));
@@ -2273,6 +2290,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             weatherTitle = Prefs.city().isEmpty() ? Ui.tr("Weather") : Prefs.city();
             nowTemp = HomeData.degrees(wx.temp);
             highLow = HomeData.highLow(wx, "   ");
+            uvText = UvIndex.available(wx.uvMax)
+                    ? "UV " + UvIndex.value(wx.uvMax) + " · " + UvIndex.level(UvIndex.value(wx.uvMax)) : "";
+            uvAdviceText = UvIndex.available(wx.uvMax) ? UvIndex.advice(UvIndex.value(wx.uvMax)) : "";
             textDays = Prefs.forecast().equals("days") && !wx.days.isEmpty();   // no days yet (an older forecast, offline): the hours
             for (int i = 0; textDays && i < wx.days.size() && i < 5; i++) {
                 dayText[i] = HomeData.weekday(wx.days.get(i));

@@ -48,7 +48,7 @@ final class HomeData {
     }
     // Both forecasts in one answer, the next 48 hours and today plus 5 days: Home Settings → Forecast switches without
     // asking again, and offline too.
-    private static final String WEATHER_QUERY = "&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,weather_code"
+    private static final String WEATHER_QUERY = "&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,weather_code,uv_index_max"
             + "&hourly=temperature_2m,weather_code,is_day&timezone=auto&forecast_days=6&forecast_hours=48";
 
     private static String weatherPlace() {
@@ -135,7 +135,7 @@ final class HomeData {
     }
 
     static final class Weather {
-        double temp = Double.NaN, max = Double.NaN, min = Double.NaN;
+        double temp = Double.NaN, max = Double.NaN, min = Double.NaN, uvMax = Double.NaN;
         int code = -1;
         boolean isDay = true;
         long sunrise, sunset;   // today's, in epoch ms
@@ -323,6 +323,8 @@ final class HomeData {
         JSONObject daily = o.getJSONObject("daily");
         w.max = daily.getJSONArray("temperature_2m_max").getDouble(0);
         w.min = daily.getJSONArray("temperature_2m_min").getDouble(0);
+        w.uvMax = daily.optJSONArray("uv_index_max") == null ? Double.NaN
+                : daily.optJSONArray("uv_index_max").optDouble(0, Double.NaN);
         w.sunrise = localTime(daily.getJSONArray("sunrise").getString(0), zone);
         w.sunset = localTime(daily.getJSONArray("sunset").getString(0), zone);
         JSONObject hourly = o.optJSONObject("hourly");
