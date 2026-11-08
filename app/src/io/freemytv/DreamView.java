@@ -32,7 +32,7 @@ import java.util.concurrent.Executors;
 /**
  * The screensaver, in the same style as the home screen:
  *  - the recommendations' photos in full screen, one every 30 s, with a slow zoom and pan (the "Ken Burns" effect of
- *    the Apple TV photos) and a crossfade between them; each photo is loaded 10% larger than the screen, so the zoom
+ *    the Apple TV photos) and a crossfade between them; each photo is loaded 20% larger than the screen, so the zoom
  *    never upscales it;
  *  - top right, like the iPhone lock screen: the date with the weather, the big Liquid Glass clock (the photo shows
  *    through the digits, bent at the edges; Shaders.GLASS_TEXT) and the compact prices;
@@ -43,12 +43,12 @@ import java.util.concurrent.Executors;
  * Without photos (no TMDB key, or before the first fetch): the big clock over the night aurora.
  */
 final class DreamView extends View implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener {
-    private static final long SHOW_MS = 30_000, FADE_MS = 3_000, FIRST_MS = 1_600;
-    private static final float ZOOM = 0.1f;
-    /** Photos 10% larger than the screen (the zoom goes up to 1.1 without upscaling). */
-    private static final int PW = 2112, PH = 1188;
+    private static final long SHOW_MS = 30_000, FADE_MS = 4_500, FIRST_MS = 2_200;
+    private static final float ZOOM = 0.16f;
+    /** Photos 20% larger than the screen (the zoom goes up to 1.16 without upscaling). */
+    private static final int PW = 2304, PH = 1296;
     private static final float MARGIN = 80, RIGHT = 1840, TITLE_W = 900, META_BASE = 1008;
-    private static final float DATE_BASE = 92, CLOCK_TOP = 120, CLOCK_SIZE = 200, QUOTES_GAP = 52;
+    private static final float DATE_BASE = 92, CLOCK_TOP = 120, CLOCK_SIZE = 100, QUOTES_GAP = 52;
     private static final double DRIFT_PERIOD_S = 600;
     // The high and low and the stale prices line, made again only when they change (drawn on every frame).
     private String range = "", staleLine = "", staleFor = "";
@@ -135,7 +135,9 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private float k = 1;
     private long minute = -1;
     private String clock = "", date = "";
-    private Paint datePaint, clockPaint, weatherPaint, weatherDim, quotePaint, stalePaint;
+    private String photoCountInfo, photoDateInfo;
+    private int photoInfoIndex, photoInfoTotal;
+    private Paint datePaint, clockPaint, weatherPaint, weatherDim, quotePaint, stalePaint, photoInfoPaint;
     private Paint cornerDate, cornerQuote, cornerStale, cornerClock, labelPaint, metaPaint, hintPaint;
     private TextPaint titlePaint;
 
@@ -189,7 +191,14 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         data.refreshIfStale();
         recs.refreshIfStale();
         recs.prefetchAll();
-        Photos.importInbox(getContext(), () -> { if (running) prepareNext(); });
+        Photos.importInbox(getContext(), () -> {
+            if (running) {
+                refreshPhotoInfo(incoming != null ? incoming : current);
+                prepareNext();
+                invalidate();
+            }
+        });
+        refreshPhotoInfo(current);
         prepareNext();
         handler.postDelayed(tick, 60_000);
         playing.start();
@@ -245,9 +254,9 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         chrome.setPosition(0, 0, w, h);
         // Without photos (the clock over the aurora).
         datePaint = Ui.text(Ui.semibold, 36 * k, 0xD9FFFFFF);
-        datePaint.setTextAlign(Paint.Align.CENTER);
-        clockPaint = Ui.numbers(Ui.thin, 280 * k, 0xF2FFFFFF);
-        clockPaint.setTextAlign(Paint.Align.CENTER);
+        datePaint.setTextAlign(Paint.Align.RIGHT);
+        clockPaint = Ui.numbers(Ui.thin, 140 * k, 0xF2FFFFFF);
+        clockPaint.setTextAlign(Paint.Align.RIGHT);
         clockPaint.setLetterSpacing(-0.01f);
         weatherPaint = Ui.numbers(Ui.medium, 30 * k, 0xC7FFFFFF);
         weatherDim = Ui.numbers(Ui.regular, 28 * k, 0x80FFFFFF);
@@ -256,6 +265,8 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         stalePaint.setTextAlign(Paint.Align.CENTER);
         // With photos: the corner (date, clock, prices) and the caption.
         cornerDate = Ui.numbers(Ui.semibold, 30 * k, 0xEBFFFFFF);
+        photoInfoPaint = new Paint(cornerDate);
+        photoInfoPaint.setTextSize(15 * k);
         cornerQuote = Ui.numbers(Ui.regular, 23 * k, 0xC7FFFFFF);
         cornerStale = Ui.text(Ui.medium, 21 * k, 0x99FFFFFF);
         cornerClock = Ui.numbers(Ui.displaySemibold, CLOCK_SIZE * k, 0xF2FFFFFF);
@@ -268,7 +279,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         metaPaint.setLetterSpacing(0.014f);
         Symbols.warmWeather(getContext(), 30 * k);   // the corner's
         Symbols.warmWeather(getContext(), 32 * k);   // under the clock
-        for (Paint p : new Paint[] {cornerDate, cornerQuote, cornerStale, cornerClock, labelPaint, titlePaint, metaPaint, barPaint}) {
+        for (Paint p : new Paint[] {cornerDate, cornerQuote, cornerStale, cornerClock, photoInfoPaint, labelPaint, titlePaint, metaPaint, barPaint}) {
             p.setShadowLayer(18 * k, 0, 2 * k, 0x66000000);
         }
         fitPlaying();
@@ -283,6 +294,37 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     /** Your photos when they are on, otherwise the picks'. */
     private List<Recs.Pick> photos() {
         return Photos.on(getContext()) ? Photos.picks(getContext()) : recs.showcase();
+    }
+
+    /** The imported photo count and the last import date, refreshed after every inbox scan. */
+    private void refreshPhotoInfo(Slide active) {
+        if (!Prefs.photos()) {
+            photoCountInfo = photoDateInfo = null;
+            photoInfoIndex = photoInfoTotal = 0;
+            return;
+        }
+        List<File> imported = Photos.files(getContext());
+        long updated = Photos.lastUpdated(getContext());
+        if (imported.isEmpty() || updated == 0) {
+            photoCountInfo = photoDateInfo = null;
+            photoInfoIndex = photoInfoTotal = 0;
+            return;
+        }
+        photoInfoTotal = imported.size();
+        photoDateInfo = Ui.tr("Last updated") + ": " + Ui.date(updated) + " " + Ui.clock(updated);
+        photoInfoIndex = 0;
+        photoCountInfo = null;
+        setPhotoInfoSlide(active);
+    }
+
+    private void setPhotoInfoSlide(Slide active) {
+        if (photoDateInfo == null || active == null || active.pick.photo == null) {
+            photoInfoIndex = 0;
+            photoCountInfo = null;
+            return;
+        }
+        photoInfoIndex = active.pick.id + 1;
+        photoCountInfo = Ui.tr("Photos") + ": " + photoInfoIndex + " / " + photoInfoTotal;
     }
 
     /** Loads the next photo in the background (one at a time); once ready, it comes in at the right moment. */
@@ -365,6 +407,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             prepared = null;
             current.startedAt = up;
             firstAt = up;
+            setPhotoInfoSlide(current);
             bindPhotos();
             prepareNext();
             return;
@@ -373,6 +416,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             incoming = prepared;
             prepared = null;
             incoming.startedAt = up;
+            setPhotoInfoSlide(incoming);
             bindPhotos();
             return;
         }
@@ -462,7 +506,8 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
         place(current, up, placeA);
         float e = incoming == null ? 0 : fadeIn(up - incoming.startedAt, FADE_MS);
-        drawPhoto(canvas, current, placeA, first);
+        float oldAlpha = incoming != null && incoming.image == current.image ? first : first * (1 - e);
+        drawPhoto(canvas, current, placeA, oldAlpha);
         if (incoming != null) {
             place(incoming, up, placeB);
             drawPhoto(canvas, incoming, placeB, e);
@@ -477,6 +522,10 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         }
         drawGlass(canvas, first, e);
         drawCaptions(canvas, up);
+        if (photoCountInfo != null) {
+            canvas.drawText(photoCountInfo, MARGIN * k, h - 47 * k, photoInfoPaint);
+            canvas.drawText(photoDateInfo, MARGIN * k, h - 28 * k, photoInfoPaint);
+        }
     }
 
     /** What an app is playing, cut to fit the corner and the bottom line: once per title, not while recording. */
@@ -773,7 +822,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         return opened;
     }
 
-    /** The caption fades out fast; the new one rises in once the photo has partly changed (like the home screen). */
+    /** Captions ease across the longer photo transition. */
     private void drawCaptions(Canvas c, long up) {
         if (incoming == null) {
             float a = current.startedAt == firstAt ? fadeIn(up - firstAt - 700, 900) : 1;
@@ -783,13 +832,13 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             return;
         }
         long t = up - incoming.startedAt;
-        float out = 1 - Ui.clamp(t / 500f);
+        float out = 1 - fadeIn(t, 1_600);
         if (out > 0.004f) {
             current.caption.setAlpha(out);
             current.caption.setTranslationY(0);
             current.caption.draw(c);
         }
-        float in = fadeIn(t - 1300, 900);
+        float in = fadeIn(t - 1_400, 1_800);
         if (in > 0.004f) {
             incoming.caption.setAlpha(in);
             incoming.caption.setTranslationY(14 * k * (1 - in));
@@ -831,8 +880,9 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         float cx = w / 2f;
         float clockCap = Ui.cap(clockPaint);
         float clockBase = h * 0.5f + clockCap / 2 - 10 * k;
-        c.drawText(date, cx, clockBase - clockCap - 34 * k, datePaint);
-        c.drawText(clock, cx, clockBase, clockPaint);
+        float right = w - MARGIN * k;
+        c.drawText(date, right, clockBase - clockCap - 34 * k, datePaint);
+        c.drawText(clock, right, clockBase, clockPaint);
 
         // Weather: symbol, temperature, high and low, centered under the clock.
         HomeData.Weather wx = data.weather;

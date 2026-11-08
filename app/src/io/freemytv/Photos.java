@@ -36,8 +36,8 @@ import java.util.concurrent.Executors;
 final class Photos {
     private Photos() {}
 
-    /** The screensaver's photo size (DreamView loads them 10% larger than the screen, for the slow zoom). */
-    static final int W = 2112, H = 1188;
+    /** The screensaver's photo size (DreamView loads them 20% larger than the screen, for the slow zoom). */
+    static final int W = 2304, H = 1296;
     /** At most this many (about 300 KB each); later ones wait in the folder until some are removed. */
     static final int MAX = 100;
     /** Smaller ones are icons and thumbnails, not photos. */
@@ -163,7 +163,7 @@ final class Photos {
 
     /**
      * Imports what tools/photos.py put in the inbox, in the background, one photo at a time; `done` runs (on the main
-     * thread) when something was imported, also when an import already under way (asked by another screen) brings it.
+     * thread after the inbox scan finishes, even when it was empty or another screen was already importing.
      * Cheap when the inbox is empty: one directory listing.
      */
     static void importInbox(Context c, Runnable done) {
@@ -174,9 +174,8 @@ final class Photos {
             importing = true;
         }
         worker.execute(() -> {
-            int n = 0;
             try {
-                n = importNow(app);
+                importNow(app);
             } catch (RuntimeException e) {
                 AppLog.w("photos: import failed: " + e.getMessage());
             }
@@ -186,7 +185,7 @@ final class Photos {
                 tell = new ArrayList<>(waiting);
                 waiting.clear();
             }
-            if (n > 0) main.post(() -> { for (Runnable r : tell) r.run(); });
+            main.post(() -> { for (Runnable r : tell) r.run(); });
         });
     }
 
@@ -301,6 +300,13 @@ final class Photos {
         } catch (RuntimeException e) {
             return 0;
         }
+    }
+
+    /** The latest import time among the photos on disk, or 0. */
+    static long lastUpdated(Context c) {
+        long latest = 0;
+        for (File f : files(c)) latest = Math.max(latest, importedAt(f));
+        return latest;
     }
 
     /** Takes Immich's away (and what of it still waits), keeping tools/photos.py's. */
